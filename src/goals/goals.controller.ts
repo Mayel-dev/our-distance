@@ -24,10 +24,6 @@ export class GoalsController {
     return this.goalsService.create(createGoalDto, req.user.id); // 👈 id del token
   }
 
-  @Get()
-  findAll() {
-    return this.goalsService.findAll();
-  }
   @Get('my-goals')
   getMyGoals(@Request() req) {
     return this.goalsService.getMyGoals(req.user.id);

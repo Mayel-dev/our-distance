@@ -27,7 +27,7 @@ export class UsersController {
   update(@Request() req, @Body() updateUserDto: UpdateUserDto) {
     return this.usersService.update(req.user.id, updateUserDto);
   }
-  
+
   @Delete('disconnect-partner')
   disconnectPartner(@Request() req) {
     return this.usersService.disconnectPartner(req.user.id);
