@@ -25,7 +25,7 @@ export class User {
 
   @OneToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'partner_id' })
-  partner: User;
+  partner: User | null;
 
   @Column({ type: 'varchar', length: 255, unique: true })
   pairingCode: string;

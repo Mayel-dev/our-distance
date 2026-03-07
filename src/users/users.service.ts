@@ -1,11 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { CreateUserDto } from './dto/create-user.dto';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+
 import { UpdateUserDto } from './dto/update-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import * as bcrypt from 'bcrypt';
-import { v4 as uuid } from 'uuid';
 import { ConflictException } from '@nestjs/common';
 
 @Injectable()
@@ -14,33 +17,6 @@ export class UsersService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
   ) {}
-
-  // 1) Método para crear un nuevo usuario validado
-  async create(createUserDto: CreateUserDto) {
-    // verificar email
-    const emailExists = await this.userRepository.findOne({
-      where: { email: createUserDto.email },
-    });
-    if (emailExists) throw new ConflictException('El email ya está registrado');
-
-    // verificar username
-    const usernameExists = await this.userRepository.findOne({
-      where: { username: createUserDto.username },
-    });
-    if (usernameExists)
-      throw new ConflictException('El username ya está en uso');
-
-    // Transformar los datos
-    const user = this.userRepository.create({
-      username: createUserDto.username,
-      email: createUserDto.email,
-      passwordHash: await bcrypt.hash(createUserDto.password, 10), // Hash de la contraseña
-      pairingCode: uuid(), // Generar un código de emparejamiento único
-    });
-
-    // Guardar el usuario en la base de datos
-    return this.userRepository.save(user);
-  }
 
   async findAll() {
     return this.userRepository.find();
@@ -76,10 +52,6 @@ export class UsersService {
       user.passwordHash = await bcrypt.hash(updateUserDto.password, 10);
     }
 
-    // Actualizar otros campos si vienen
-    if (updateUserDto.username) {
-      user.username = updateUserDto.username;
-    }
     // Guardar
     return this.userRepository.save(user);
   }
@@ -90,5 +62,74 @@ export class UsersService {
 
     await this.userRepository.remove(user);
     return { message: 'Usuario eliminado correctamente' };
+  }
+
+  async connectPartner(userId: string, pairingCode: string) {
+    // 1. Buscar el usuario actual
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['partner'],
+    });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    // 2. Verificar que no tenga ya pareja
+    if (user.partner) {
+      throw new ConflictException('Ya tienes una pareja conectada');
+    }
+
+    // 3. Buscar el partner por pairingCode
+    const partner = await this.userRepository.findOne({
+      where: { pairingCode },
+      relations: ['partner'],
+    });
+    if (!partner) throw new NotFoundException('Código de pareja inválido');
+
+    // 4. Verificar que no sea el mismo usuario
+    if (partner.id === userId) {
+      throw new ConflictException('No puedes conectarte contigo mismo');
+    }
+
+    // 5. Verificar que el partner no tenga ya pareja
+    if (partner.partner) {
+      throw new ConflictException('Este usuario ya tiene una pareja');
+    }
+
+    // 6. Conectar los dos usuarios
+    user.partner = partner;
+    partner.partner = user;
+
+    await this.userRepository.save(user);
+    await this.userRepository.save(partner);
+
+    return { message: 'Pareja conectada exitosamente' };
+  }
+
+  // Método para desconectar pareja y generar nuevos códigos
+  async disconnectPartner(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['partner'],
+    });
+
+    if (!user?.partner) {
+      throw new BadRequestException('No tienes pareja conectada');
+    }
+
+    const partner = user.partner;
+
+    // Desconectar los dos y generar nuevos códigos
+    user.partner = null;
+    user.pairingCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    partner.partner = null;
+    partner.pairingCode = Math.random()
+      .toString(36)
+      .substring(2, 8)
+      .toUpperCase();
+
+    await this.userRepository.save(user);
+    await this.userRepository.save(partner);
+
+    return { message: 'Pareja desconectada correctamente' };
   }
 }

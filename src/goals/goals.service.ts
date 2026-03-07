@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -59,18 +60,75 @@ export class GoalsService {
     return goal;
   }
 
-  async update(id: string, updateGoalDto: UpdateGoalDto) {
-    const goal = await this.goalRepository.findOne({ where: { id } });
+  async update(id: string, updateGoalDto: UpdateGoalDto, userId: string) {
+    const goal = await this.goalRepository.findOne({
+      where: { id },
+      relations: ['createdBy'],
+    });
     if (!goal) throw new NotFoundException('Meta no encontrada');
 
-    Object.assign(goal, updateGoalDto);
+    // Verificar que el usuario sea el dueño
+    if (goal.createdBy.id !== userId) {
+      throw new ForbiddenException('No tienes permiso para editar esta meta');
+    }
 
+    Object.assign(goal, updateGoalDto);
     return this.goalRepository.save(goal);
   }
 
-  async remove(id: string) {
-    const goal = await this.goalRepository.findOne({ where: { id } });
+  async remove(id: string, userId: string) {
+    const goal = await this.goalRepository.findOne({
+      where: { id },
+      relations: ['createdBy'],
+    });
     if (!goal) throw new NotFoundException('Meta no encontrada');
-    return this.goalRepository.remove(goal);
+
+    // Solo el dueño puede eliminarla
+    if (goal.createdBy.id !== userId) {
+      throw new ForbiddenException('No tienes permiso para eliminar esta meta');
+    }
+
+    await this.goalRepository.remove(goal);
+    return { message: 'Meta eliminada correctamente' };
+  }
+
+  async getMyGoals(userId: string) {
+    return this.goalRepository.find({
+      where: { createdBy: { id: userId } },
+      relations: ['createdBy'],
+    });
+  }
+
+  async getPartnerGoals(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['partner'],
+    });
+
+    if (!user?.partner)
+      throw new NotFoundException('No tienes pareja conectada');
+
+    return this.goalRepository.find({
+      where: { createdBy: { id: user.partner.id } },
+      relations: ['createdBy'],
+    });
+  }
+
+  async getSharedGoals(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['partner'],
+    });
+
+    if (!user?.partner)
+      throw new NotFoundException('No tienes pareja conectada');
+
+    return this.goalRepository.find({
+      where: [
+        { goalType: GoalType.SHARED, createdBy: { id: userId } },
+        { goalType: GoalType.SHARED, createdBy: { id: user.partner.id } },
+      ],
+      relations: ['createdBy'],
+    });
   }
 }
