@@ -1,0 +1,11 @@
+# .env.example
+DB_HOST=localhost
+DB_PORT=5435
+DB_USERNAME=
+DB_PASSWORD=
+DB_NAME=our-distance
+
+JWT_SECRET=
+JWT_EXPIRES_IN=7d
+
+PORT=3000
