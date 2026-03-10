@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -11,11 +12,15 @@ import { User } from './entities/user.entity';
 import * as bcrypt from 'bcrypt';
 import { ConflictException } from '@nestjs/common';
 
+import { Goal } from 'src/goals/entities/goal.entity';
+
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Goal)
+    private goalRepository: Repository<Goal>,
   ) {}
 
   async findAll() {
@@ -23,43 +28,86 @@ export class UsersService {
   }
 
   async findOne(id: string) {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: ['partner'], // 👈 solo esto
+    });
     if (!user) throw new NotFoundException('Usuario no encontrado');
     return user;
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
-    //Verificar si el usuario existe
     const user = await this.userRepository.findOne({ where: { id } });
-    if (!user) {
-      throw new ConflictException('User not found');
-    }
+    if (!user) throw new NotFoundException('Usuario no encontrado');
 
-    // Verificar que el nuevo username no esté en uso por otro usuario
     if (updateUserDto.username) {
       const usernameExists = await this.userRepository.findOne({
         where: { username: updateUserDto.username },
       });
-      //  verificar que no sea el mismo usuario
       if (usernameExists && usernameExists.id !== id) {
         throw new ConflictException('El username ya está en uso');
       }
       user.username = updateUserDto.username;
     }
 
-    // Si viene password, encriptarlo
     if (updateUserDto.password) {
+      // Verificar contraseña actual
+      if (!updateUserDto.currentPassword) {
+        throw new BadRequestException('Debes ingresar tu contraseña actual');
+      }
+      const isValid = await bcrypt.compare(
+        updateUserDto.currentPassword,
+        user.passwordHash,
+      );
+      if (!isValid) {
+        throw new UnauthorizedException('Contraseña actual incorrecta');
+      }
       user.passwordHash = await bcrypt.hash(updateUserDto.password, 10);
     }
 
-    // Guardar
     return this.userRepository.save(user);
   }
 
+  // Método para eliminar usuario y manejar relaciones
   async remove(id: string) {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.userRepository.findOne({
+      where: { id },
+      relations: ['partner'],
+    });
     if (!user) throw new NotFoundException('Usuario no encontrado');
 
+    await this.goalRepository.query(
+      `UPDATE goals SET partner_id = NULL WHERE partner_id = $1`,
+      [id],
+    );
+
+    // 2. Eliminar TODAS las metas del usuario
+    await this.goalRepository
+      .createQueryBuilder()
+      .delete()
+      .where('created_by = :id', { id })
+      .execute();
+
+    // 3. Desconectar pareja
+    if (user.partner) {
+      const partner = await this.userRepository.findOne({
+        where: { id: user.partner.id },
+      });
+      if (partner) {
+        partner.partner = null;
+        partner.pairingCode = Math.random()
+          .toString(36)
+          .substring(2, 8)
+          .toUpperCase();
+        await this.userRepository.save(partner);
+      }
+    }
+
+    // 4. Quitar partner_id del usuario antes de eliminar
+    user.partner = null;
+    await this.userRepository.save(user);
+
+    // 5. Eliminar el usuario
     await this.userRepository.remove(user);
     return { message: 'Usuario eliminado correctamente' };
   }

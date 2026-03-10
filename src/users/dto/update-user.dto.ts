@@ -10,4 +10,8 @@ export class UpdateUserDto {
   @MinLength(8)
   @IsOptional()
   password?: string | undefined;
+
+  @IsString()
+  @IsOptional()
+  currentPassword?: string;
 }

@@ -6,6 +6,15 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  //Habilitamos las llamadas a nuestra API desde el frontend
+  // Tiene que ir al principio para que se aplique a todas las rutas, incluyendo Swagger
+
+  app.enableCors({
+    origin: 'http://localhost:4200',
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
   // Swagger
   const config = new DocumentBuilder()
     .setTitle('Our Distance API')
@@ -21,5 +30,13 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   await app.listen(process.env.PORT ?? 3000);
+
+  //Habilitamos las llamadas a nuestra API desde el frontend
+
+  app.enableCors({
+    origin: 'http://localhost:4200',
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 }
 bootstrap();
