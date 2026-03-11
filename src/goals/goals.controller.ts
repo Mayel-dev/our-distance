@@ -40,8 +40,8 @@ export class GoalsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.goalsService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.goalsService.findOne(id, req.user.id);
   }
 
   @Patch(':id')
