@@ -34,7 +34,7 @@ async function bootstrap() {
   //Habilitamos las llamadas a nuestra API desde el frontend
 
   app.enableCors({
-    origin: 'http://localhost:4200',
+    origin: ['http://localhost:4200', 'https://tu-app.vercel.app'],
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
