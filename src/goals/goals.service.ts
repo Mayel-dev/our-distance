@@ -50,29 +50,66 @@ export class GoalsService {
     return this.goalRepository.save(goal);
   }
 
-  findAll() {
-    return `This action returns all goals`;
-  }
+  async findOne(id: string, userId: string) {
+    const goal = await this.goalRepository.findOne({
+      where: { id },
+      relations: ['createdBy', 'partner'],
+    });
 
-  async findOne(id: string) {
-    const goal = await this.goalRepository.findOne({ where: { id } });
     if (!goal) throw new NotFoundException('Meta no encontrada');
+    // Verificar que el usuario sea el dueño o el partner
+    const isOwner = goal.createdBy.id === userId;
+    const isPartner = goal.partner?.id === userId;
+
+    if (!isOwner && !isPartner) {
+      throw new ForbiddenException('No tienes permiso para ver esta meta');
+    }
+
     return goal;
   }
 
   async update(id: string, updateGoalDto: UpdateGoalDto, userId: string) {
     const goal = await this.goalRepository.findOne({
       where: { id },
-      relations: ['createdBy'],
+      relations: ['createdBy', 'partner'],
     });
-    if (!goal) throw new NotFoundException('Meta no encontrada');
 
-    // Verificar que el usuario sea el dueño
+    if (!goal) {
+      throw new NotFoundException('Meta no encontrada');
+    }
+
     if (goal.createdBy.id !== userId) {
       throw new ForbiddenException('No tienes permiso para editar esta meta');
     }
 
+    // Si quieren cambiar el tipo de meta
+    if (updateGoalDto.goalType) {
+      const user = await this.userRepository.findOne({
+        where: { id: userId },
+        relations: ['partner'],
+      });
+
+      if (!user) {
+        throw new NotFoundException('Usuario no encontrado');
+      }
+
+      // Si cambia a SHARED, debe tener pareja
+      if (updateGoalDto.goalType === GoalType.SHARED) {
+        if (!user.partner) {
+          throw new BadRequestException('Aún no tienes una pareja conectada');
+        }
+
+        goal.partner = user.partner;
+      }
+
+      // Si cambia a PRIVATE, deja de estar compartida
+      if (updateGoalDto.goalType === GoalType.PRIVATE) {
+        goal.partner = null;
+      }
+    }
+
     Object.assign(goal, updateGoalDto);
+
     return this.goalRepository.save(goal);
   }
 
@@ -94,7 +131,10 @@ export class GoalsService {
 
   async getMyGoals(userId: string) {
     return this.goalRepository.find({
-      where: { createdBy: { id: userId } },
+      where: {
+        createdBy: { id: userId },
+        goalType: GoalType.PRIVATE,
+      },
       relations: ['createdBy'],
     });
   }
@@ -105,11 +145,15 @@ export class GoalsService {
       relations: ['partner'],
     });
 
-    if (!user?.partner)
+    if (!user?.partner) {
       throw new NotFoundException('No tienes pareja conectada');
+    }
 
     return this.goalRepository.find({
-      where: { createdBy: { id: user.partner.id } },
+      where: {
+        createdBy: { id: user.partner.id },
+        goalType: GoalType.PRIVATE,
+      },
       relations: ['createdBy'],
     });
   }
@@ -124,9 +168,18 @@ export class GoalsService {
       throw new NotFoundException('No tienes pareja conectada');
 
     return this.goalRepository.find({
+      // Dos condiciones OR para traer las metas compartidas donde el usuario es dueño o partner
       where: [
-        { goalType: GoalType.SHARED, createdBy: { id: userId } },
-        { goalType: GoalType.SHARED, createdBy: { id: user.partner.id } },
+        {
+          goalType: GoalType.SHARED,
+          createdBy: { id: userId },
+          partner: { id: user.partner.id },
+        },
+        {
+          goalType: GoalType.SHARED,
+          createdBy: { id: user.partner.id },
+          partner: { id: userId },
+        },
       ],
       relations: ['createdBy'],
     });

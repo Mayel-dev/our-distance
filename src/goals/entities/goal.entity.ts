@@ -39,5 +39,5 @@ export class Goal {
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'partner_id' })
-  partner: User;
+  partner: User | null;
 }
