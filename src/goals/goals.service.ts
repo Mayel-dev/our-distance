@@ -68,6 +68,7 @@ export class GoalsService {
     return goal;
   }
 
+  // Update method with permission check: only the owner can update the goal, but if it's SHARED, partner can edit as well
   async update(id: string, updateGoalDto: UpdateGoalDto, userId: string) {
     const goal = await this.goalRepository.findOne({
       where: { id },
@@ -78,12 +79,26 @@ export class GoalsService {
       throw new NotFoundException('Meta no encontrada');
     }
 
-    if (goal.createdBy.id !== userId) {
+    const isOwner = goal.createdBy.id === userId;
+    const isPartner = goal.partner?.id === userId;
+    const isShared = goal.goalType === GoalType.SHARED;
+
+    // Permiso general de edición
+    const canEdit = isOwner || (isShared && isPartner);
+
+    if (!canEdit) {
       throw new ForbiddenException('No tienes permiso para editar esta meta');
     }
 
-    // Si quieren cambiar el tipo de meta
-    if (updateGoalDto.goalType) {
+    // Solo el dueño puede hacer cambios estructurales
+    if (updateGoalDto.goalType && !isOwner) {
+      throw new ForbiddenException(
+        'Solo el creador puede cambiar el tipo de meta',
+      );
+    }
+
+    // Si el dueño quiere cambiar el tipo de meta
+    if (updateGoalDto.goalType && isOwner) {
       const user = await this.userRepository.findOne({
         where: { id: userId },
         relations: ['partner'],
@@ -93,7 +108,6 @@ export class GoalsService {
         throw new NotFoundException('Usuario no encontrado');
       }
 
-      // Si cambia a SHARED, debe tener pareja
       if (updateGoalDto.goalType === GoalType.SHARED) {
         if (!user.partner) {
           throw new BadRequestException('Aún no tienes una pareja conectada');
@@ -102,7 +116,6 @@ export class GoalsService {
         goal.partner = user.partner;
       }
 
-      // Si cambia a PRIVATE, deja de estar compartida
       if (updateGoalDto.goalType === GoalType.PRIVATE) {
         goal.partner = null;
       }
@@ -113,6 +126,7 @@ export class GoalsService {
     return this.goalRepository.save(goal);
   }
 
+  // Remove method with permission check: only the owner can delete the goal
   async remove(id: string, userId: string) {
     const goal = await this.goalRepository.findOne({
       where: { id },
@@ -121,6 +135,7 @@ export class GoalsService {
     if (!goal) throw new NotFoundException('Meta no encontrada');
 
     // Solo el dueño puede eliminarla
+
     if (goal.createdBy.id !== userId) {
       throw new ForbiddenException('No tienes permiso para eliminar esta meta');
     }
@@ -164,24 +179,22 @@ export class GoalsService {
       relations: ['partner'],
     });
 
-    if (!user?.partner)
+    if (!user?.partner) {
       throw new NotFoundException('No tienes pareja conectada');
+    }
 
-    return this.goalRepository.find({
-      // Dos condiciones OR para traer las metas compartidas donde el usuario es dueño o partner
-      where: [
+    return this.goalRepository
+      .createQueryBuilder('goal')
+      .leftJoinAndSelect('goal.createdBy', 'createdBy')
+      .leftJoinAndSelect('goal.partner', 'partner')
+      .where('goal.goalType = :type', { type: GoalType.SHARED })
+      .andWhere(
+        '(createdBy.id = :userId AND partner.id = :partnerId) OR (createdBy.id = :partnerId AND partner.id = :userId)',
         {
-          goalType: GoalType.SHARED,
-          createdBy: { id: userId },
-          partner: { id: user.partner.id },
+          userId,
+          partnerId: user.partner.id,
         },
-        {
-          goalType: GoalType.SHARED,
-          createdBy: { id: user.partner.id },
-          partner: { id: userId },
-        },
-      ],
-      relations: ['createdBy'],
-    });
+      )
+      .getMany();
   }
 }
