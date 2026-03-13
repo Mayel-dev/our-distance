@@ -23,28 +23,27 @@ export class GoalsService {
   ) {}
 
   async create(createGoalDto: CreateGoalDto, userId: string) {
-    // 1. Buscar el usuario con su partner
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['partner'], // traer también el partner
+      relations: ['partner'],
     });
 
-    if (!user) throw new NotFoundException('Usuario no encontrado');
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
 
-    // 2. Si quiere meta SHARED pero no tiene partner
     if (createGoalDto.goalType === GoalType.SHARED && !user.partner) {
       throw new BadRequestException('Aún no tienes una pareja conectada');
     }
 
-    // 3. Crear la meta
     const goal = this.goalRepository.create({
       ...createGoalDto,
       status: GoalStatus.PENDING,
       createdBy: { id: userId },
       partner:
         createGoalDto.goalType === GoalType.SHARED && user.partner
-          ? { id: user.partner.id } // si ambas cosas son ciertas, asignar el partner
-          : undefined, // si no, dejarlo como undefined para que no se asigne ningún partner
+          ? { id: user.partner.id }
+          : undefined,
     });
 
     return this.goalRepository.save(goal);
@@ -56,8 +55,10 @@ export class GoalsService {
       relations: ['createdBy', 'partner'],
     });
 
-    if (!goal) throw new NotFoundException('Meta no encontrada');
-    // Verificar que el usuario sea el dueño o el partner
+    if (!goal) {
+      throw new NotFoundException('Meta no encontrada');
+    }
+
     const isOwner = goal.createdBy.id === userId;
     const isPartner = goal.partner?.id === userId;
 
@@ -68,7 +69,6 @@ export class GoalsService {
     return goal;
   }
 
-  // Update method with permission check: only the owner can update the goal, but if it's SHARED, partner can edit as well
   async update(id: string, updateGoalDto: UpdateGoalDto, userId: string) {
     const goal = await this.goalRepository.findOne({
       where: { id },
@@ -83,21 +83,18 @@ export class GoalsService {
     const isPartner = goal.partner?.id === userId;
     const isShared = goal.goalType === GoalType.SHARED;
 
-    // Permiso general de edición
     const canEdit = isOwner || (isShared && isPartner);
 
     if (!canEdit) {
       throw new ForbiddenException('No tienes permiso para editar esta meta');
     }
 
-    // Solo el dueño puede hacer cambios estructurales
     if (updateGoalDto.goalType && !isOwner) {
       throw new ForbiddenException(
         'Solo el creador puede cambiar el tipo de meta',
       );
     }
 
-    // Si el dueño quiere cambiar el tipo de meta
     if (updateGoalDto.goalType && isOwner) {
       const user = await this.userRepository.findOne({
         where: { id: userId },
@@ -126,15 +123,15 @@ export class GoalsService {
     return this.goalRepository.save(goal);
   }
 
-  // Remove method with permission check: only the owner can delete the goal
   async remove(id: string, userId: string) {
     const goal = await this.goalRepository.findOne({
       where: { id },
       relations: ['createdBy'],
     });
-    if (!goal) throw new NotFoundException('Meta no encontrada');
 
-    // Solo el dueño puede eliminarla
+    if (!goal) {
+      throw new NotFoundException('Meta no encontrada');
+    }
 
     if (goal.createdBy.id !== userId) {
       throw new ForbiddenException('No tienes permiso para eliminar esta meta');
@@ -151,6 +148,9 @@ export class GoalsService {
         goalType: GoalType.PRIVATE,
       },
       relations: ['createdBy'],
+      order: {
+        createdAt: 'DESC',
+      },
     });
   }
 
@@ -170,6 +170,9 @@ export class GoalsService {
         goalType: GoalType.PRIVATE,
       },
       relations: ['createdBy'],
+      order: {
+        createdAt: 'DESC',
+      },
     });
   }
 
@@ -195,6 +198,7 @@ export class GoalsService {
           partnerId: user.partner.id,
         },
       )
+      .orderBy('goal.createdAt', 'DESC')
       .getMany();
   }
 }
