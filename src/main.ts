@@ -6,6 +6,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Configuración de CORS para permitir solicitudes desde el frontend
   app.enableCors({
     origin: ['http://localhost:4200', 'https://our-distance-app.vercel.app'],
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],

@@ -13,32 +13,44 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { ConnectPartnerDto } from './dto/connect-partner.dto';
 
+interface RequestWithUser extends Request {
+  user: {
+    id: string;
+    username: string;
+  };
+}
 @UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get('me')
-  getProfile(@Request() req) {
+  getProfile(@Request() req: RequestWithUser) {
     return this.usersService.findOne(req.user.id);
   }
 
   @Patch('me')
-  update(@Request() req, @Body() updateUserDto: UpdateUserDto) {
+  update(
+    @Request() req: RequestWithUser,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
     return this.usersService.update(req.user.id, updateUserDto);
   }
 
   @Delete('disconnect-partner')
-  disconnectPartner(@Request() req) {
+  disconnectPartner(@Request() req: RequestWithUser) {
     return this.usersService.disconnectPartner(req.user.id);
   }
   @Delete('me')
-  remove(@Request() req) {
+  remove(@Request() req: RequestWithUser) {
     return this.usersService.remove(req.user.id);
   }
 
   @Post('connect-partner')
-  connectPartner(@Request() req, @Body() connectPartnerDto: ConnectPartnerDto) {
+  connectPartner(
+    @Request() req: RequestWithUser,
+    @Body() connectPartnerDto: ConnectPartnerDto,
+  ) {
     return this.usersService.connectPartner(
       req.user.id,
       connectPartnerDto.pairingCode,

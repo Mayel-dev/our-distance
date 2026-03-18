@@ -36,6 +36,7 @@ export class AuthService {
     const saved = await this.userRepository.save(user);
 
     // 3. Generar y devolver token
+    // usuario queda loggeado automáticamente al registrarse, así que generamos el token y lo devolvemos junto con los datos del usuario
     return this.generateToken(saved);
   }
 

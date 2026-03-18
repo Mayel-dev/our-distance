@@ -38,7 +38,7 @@ export class GoalsService {
 
     const goal = this.goalRepository.create({
       ...createGoalDto,
-      status: GoalStatus.PENDING,
+      status: GoalStatus.PENDING, // por defecto
       createdBy: { id: userId },
       partner:
         createGoalDto.goalType === GoalType.SHARED && user.partner
@@ -186,6 +186,7 @@ export class GoalsService {
       throw new NotFoundException('No tienes pareja conectada');
     }
 
+    // usamos query builder para manejar la lógica compleja de los goals compartidos porque TypeORM no soporta bien las condiciones OR con relaciones
     return this.goalRepository
       .createQueryBuilder('goal')
       .leftJoinAndSelect('goal.createdBy', 'createdBy')
