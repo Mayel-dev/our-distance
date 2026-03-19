@@ -12,6 +12,7 @@ import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { ConnectPartnerDto } from './dto/connect-partner.dto';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 interface RequestWithUser extends Request {
   user: {
@@ -19,6 +20,8 @@ interface RequestWithUser extends Request {
     username: string;
   };
 }
+
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {

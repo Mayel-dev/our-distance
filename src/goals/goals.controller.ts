@@ -13,12 +13,14 @@ import { GoalsService } from './goals.service';
 import { CreateGoalDto } from './dto/create-goal.dto';
 import { UpdateGoalDto } from './dto/update-goal.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 // Extendemos la interfaz Request para incluir el usuario autenticado
 interface RequestWithUser extends Request {
   user: { id: string; email: string }; // Los campos que tenga tu JWT
 }
 
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('goals')
 export class GoalsController {
