@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { GoalType } from '../enums/goal-type.enum';
 import { GoalStatus } from '../enums/goal-status.enum';
+import { GoalCategory } from '../enums/goal-category.enum';
 
 @Entity('goals')
 export class Goal {
@@ -40,4 +41,17 @@ export class Goal {
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'partner_id' })
   partner: User | null;
+
+  @Column({ default: 0 })
+  progress: number;
+
+  @Column({ type: 'date', nullable: true })
+  targetDate: Date | null;
+
+  @Column({
+    type: 'enum',
+    enum: GoalCategory,
+    nullable: true,
+  })
+  category: GoalCategory;
 }
