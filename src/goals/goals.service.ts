@@ -109,13 +109,26 @@ export class GoalsService {
         if (!user.partner) {
           throw new BadRequestException('Aún no tienes una pareja conectada');
         }
-
         goal.partner = user.partner;
       }
 
       if (updateGoalDto.goalType === GoalType.PRIVATE) {
         goal.partner = null;
       }
+    }
+
+    // si viene progress, el status lo calculamos automáticamente
+    // y no dejamos que el DTO lo pise
+    if (updateGoalDto.progress !== undefined) {
+      if (updateGoalDto.progress === 0) {
+        goal.status = GoalStatus.PENDING;
+      } else if (updateGoalDto.progress === 100) {
+        goal.status = GoalStatus.COMPLETED;
+      } else {
+        goal.status = GoalStatus.IN_PROGRESS;
+      }
+
+      delete updateGoalDto.status; // ← evita que el form pise el status calculado
     }
 
     Object.assign(goal, updateGoalDto);
