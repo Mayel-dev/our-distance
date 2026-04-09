@@ -1,19 +1,44 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { IsNull, Repository } from 'typeorm';
+import { AuthSession } from './entities/auth-session.entity';
+
+interface JwtPayload {
+  sub: string;
+  email: string;
+  sid: string;
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    @InjectRepository(AuthSession)
+    private authSessionRepository: Repository<AuthSession>,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET')!,
+      secretOrKey: configService.get<string>('JWT_ACCESS_SECRET')!,
     });
   }
 
-  async validate(payload: any) {
-    return { id: payload.sub, email: payload.email };
+  async validate(payload: JwtPayload) {
+    const session = await this.authSessionRepository.findOne({
+      where: {
+        id: payload.sid,
+        userId: payload.sub,
+        revokedAt: IsNull(),
+      },
+    });
+
+    if (!session) {
+      throw new UnauthorizedException('Sesión inválida');
+    }
+
+    return { id: payload.sub, email: payload.email, sessionId: payload.sid };
   }
 }

@@ -37,8 +37,12 @@ DB_USERNAME=myuser
 DB_PASSWORD=mypassword
 DB_NAME=our-distance
 PORT=3000
-JWT_SECRET=tu_clave_secreta
-JWT_EXPIRES_IN=7d
+JWT_ACCESS_SECRET=tu_access_secret
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_SECRET=tu_refresh_secret
+JWT_REFRESH_EXPIRES_IN=7d
+JWT_RESET_SECRET=tu_reset_secret
+JWT_RESET_EXPIRES_IN=15m
 ```
 
 ## Levantar la base de datos
@@ -63,6 +67,8 @@ http://localhost:3000/api
 ### Auth
 - `POST /auth/register` - Registro de usuario
 - `POST /auth/login` - Login
+- `POST /auth/refresh` - Renovar tokens
+- `POST /auth/logout` - Cerrar sesión actual
 
 ### Users
 - `GET /users/me` - Obtener perfil

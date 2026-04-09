@@ -8,19 +8,20 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from 'src/users/entities/user.entity';
 import type { StringValue } from 'ms';
+import { AuthSession } from './entities/auth-session.entity';
 
 @Module({
   imports: [
     PassportModule,
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, AuthSession]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET')!,
+        secret: configService.get<string>('JWT_ACCESS_SECRET')!,
         signOptions: {
           expiresIn: configService.getOrThrow<string>(
-            'JWT_EXPIRES_IN',
+            'JWT_ACCESS_EXPIRES_IN',
           ) as StringValue,
         },
       }),
