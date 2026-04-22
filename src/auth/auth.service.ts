@@ -7,7 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { IsNull, Repository } from 'typeorm';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import type { StringValue } from 'ms';
 import { User } from 'src/users/entities/user.entity';
@@ -19,6 +19,10 @@ interface TokenPayload {
   sub: string;
   email: string;
   sid: string;
+}
+
+interface DecodedTokenPayload {
+  exp?: number;
 }
 
 @Injectable()
@@ -38,7 +42,7 @@ export class AuthService {
     });
 
     if (exists) {
-      throw new ConflictException('El email ya está registrado');
+      throw new ConflictException('El email ya esta registrado');
     }
 
     const user = this.userRepository.create({
@@ -88,15 +92,15 @@ export class AuthService {
       });
 
       if (!session) {
-        throw new UnauthorizedException('Refresh token inválido');
+        throw new UnauthorizedException('Refresh token invalido');
       }
 
-      const matches = await bcrypt.compare(refreshToken, session.refreshTokenHash);
+      const matches = this.hashToken(refreshToken) === session.refreshTokenHash;
 
       if (!matches) {
         session.revokedAt = new Date();
         await this.authSessionRepository.save(session);
-        throw new UnauthorizedException('Refresh token inválido');
+        throw new UnauthorizedException('Refresh token invalido');
       }
 
       const user = await this.userRepository.findOne({
@@ -104,17 +108,17 @@ export class AuthService {
       });
 
       if (!user) {
-        throw new UnauthorizedException('Refresh token inválido');
+        throw new UnauthorizedException('Refresh token invalido');
       }
 
       const tokens = await this.generateTokens(user, session.id);
-      session.refreshTokenHash = await this.hashToken(tokens.refresh_token);
+      session.refreshTokenHash = this.hashToken(tokens.refresh_token);
       session.expiresAt = this.getTokenExpiration(tokens.refresh_token);
       await this.authSessionRepository.save(session);
 
       return tokens;
     } catch {
-      throw new UnauthorizedException('Refresh token inválido o expirado');
+      throw new UnauthorizedException('Refresh token invalido o expirado');
     }
   }
 
@@ -132,7 +136,7 @@ export class AuthService {
       await this.authSessionRepository.save(session);
     }
 
-    return { message: 'Sesión cerrada correctamente' };
+    return { message: 'Sesion cerrada correctamente' };
   }
 
   private async createSessionAndTokens(user: User) {
@@ -145,7 +149,7 @@ export class AuthService {
     });
 
     const tokens = await this.generateTokens(user, session.id);
-    session.refreshTokenHash = await this.hashToken(tokens.refresh_token);
+    session.refreshTokenHash = this.hashToken(tokens.refresh_token);
     session.expiresAt = this.getTokenExpiration(tokens.refresh_token);
 
     await this.authSessionRepository.save(session);
@@ -186,23 +190,38 @@ export class AuthService {
     };
   }
 
-  private async hashToken(token: string) {
-    return bcrypt.hash(token, 10);
+  private hashToken(token: string) {
+    return createHash('sha256').update(token).digest('hex');
   }
 
   private getTokenExpiration(token: string) {
-    const decoded = this.jwtService.decode(token);
+    const payload = this.parseTokenPayload(token);
 
-    if (
-      !decoded ||
-      typeof decoded === 'string' ||
-      typeof decoded.exp !== 'number'
-    ) {
+    if (!payload || typeof payload.exp !== 'number') {
       throw new UnauthorizedException(
-        'No se pudo determinar la expiración del token',
+        'No se pudo determinar la expiracion del token',
       );
     }
 
-    return new Date(decoded.exp * 1000);
+    return new Date(payload.exp * 1000);
+  }
+
+  private parseTokenPayload(token: string): DecodedTokenPayload | null {
+    const parts = token.split('.');
+
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    try {
+      const payloadJson = Buffer.from(parts[1], 'base64url').toString('utf-8');
+      const parsed = JSON.parse(payloadJson) as unknown;
+
+      return parsed && typeof parsed === 'object'
+        ? (parsed as DecodedTokenPayload)
+        : null;
+    } catch {
+      return null;
+    }
   }
 }

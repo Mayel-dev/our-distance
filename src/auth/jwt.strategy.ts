@@ -1,8 +1,8 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { PassportStrategy } from '@nestjs/passport';
-import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { PassportStrategy } from '@nestjs/passport';
+import { ExtractJwt, Strategy } from 'passport-jwt';
 import { IsNull, Repository } from 'typeorm';
 import { AuthSession } from './entities/auth-session.entity';
 
@@ -36,7 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
 
     if (!session) {
-      throw new UnauthorizedException('Sesión inválida');
+      throw new UnauthorizedException('Sesion invalida');
     }
 
     return { id: payload.sub, email: payload.email, sessionId: payload.sid };

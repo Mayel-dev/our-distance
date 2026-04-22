@@ -1,18 +1,27 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-
-import { UpdateUserDto } from './dto/update-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { User } from './entities/user.entity';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { IsNull, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import { ConflictException } from '@nestjs/common';
-
+import type { StringValue } from 'ms';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { User } from './entities/user.entity';
 import { Goal } from 'src/goals/entities/goal.entity';
+import { AuthSession } from 'src/auth/entities/auth-session.entity';
+
+interface PasswordResetPayload {
+  sub: string;
+  purpose?: string;
+  rv?: number;
+}
 
 @Injectable()
 export class UsersService {
@@ -21,6 +30,10 @@ export class UsersService {
     private userRepository: Repository<User>,
     @InjectRepository(Goal)
     private goalRepository: Repository<Goal>,
+    @InjectRepository(AuthSession)
+    private authSessionRepository: Repository<AuthSession>,
+    private jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
 
   async findAll() {
@@ -45,30 +58,133 @@ export class UsersService {
         where: { username: updateUserDto.username },
       });
       if (usernameExists && usernameExists.id !== id) {
-        throw new ConflictException('El username ya está en uso');
+        throw new ConflictException('El username ya esta en uso');
       }
       user.username = updateUserDto.username;
-    }
-
-    if (updateUserDto.password) {
-      // Verificar contraseña actual
-      if (!updateUserDto.currentPassword) {
-        throw new BadRequestException('Debes ingresar tu contraseña actual');
-      }
-      const isValid = await bcrypt.compare(
-        updateUserDto.currentPassword,
-        user.passwordHash,
-      );
-      if (!isValid) {
-        throw new UnauthorizedException('Contraseña actual incorrecta');
-      }
-      user.passwordHash = await bcrypt.hash(updateUserDto.password, 10);
     }
 
     return this.userRepository.save(user);
   }
 
-  // Método para eliminar usuario y manejar relaciones
+  async changePassword(userId: string, changePasswordDto: ChangePasswordDto) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+      changePasswordDto.currentPassword,
+      user.passwordHash,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('Contrasena actual incorrecta');
+    }
+
+    if (changePasswordDto.currentPassword === changePasswordDto.newPassword) {
+      throw new BadRequestException(
+        'La nueva contrasena debe ser diferente a la actual',
+      );
+    }
+
+    user.passwordHash = await bcrypt.hash(changePasswordDto.newPassword, 10);
+    user.passwordResetVersion += 1;
+
+    await this.userRepository.save(user);
+    await this.revokeActiveSessions(user.id);
+
+    return { message: 'Contrasena actualizada correctamente' };
+  }
+
+  async forgotPassword(email: string) {
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (user) {
+      const resetSecret =
+        this.configService.get<string>('JWT_RESET_SECRET') ??
+        this.configService.getOrThrow<string>('JWT_ACCESS_SECRET');
+
+      const resetExpiresIn =
+        this.configService.get<string>('JWT_RESET_EXPIRES_IN') ?? '15m';
+
+      const resetToken = await this.jwtService.signAsync(
+        {
+          sub: user.id,
+          purpose: 'password-reset',
+          rv: user.passwordResetVersion,
+        },
+        {
+          secret: resetSecret,
+          expiresIn: resetExpiresIn as StringValue,
+        },
+      );
+
+      return {
+        message:
+          'Si el correo existe, recibiras instrucciones para restablecer tu contrasena.',
+        resetToken,
+      };
+    }
+
+    return {
+      message:
+        'Si el correo existe, recibiras instrucciones para restablecer tu contrasena.',
+    };
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    try {
+      const resetSecret =
+        this.configService.get<string>('JWT_RESET_SECRET') ??
+        this.configService.getOrThrow<string>('JWT_ACCESS_SECRET');
+
+      const payload = await this.jwtService.verifyAsync<PasswordResetPayload>(
+        token,
+        {
+          secret: resetSecret,
+        },
+      );
+
+      if (payload.purpose !== 'password-reset') {
+        throw new UnauthorizedException('Token de reset invalido');
+      }
+
+      const user = await this.userRepository.findOne({
+        where: { id: payload.sub },
+      });
+
+      if (!user) {
+        throw new NotFoundException('Usuario no encontrado');
+      }
+
+      if (payload.rv !== user.passwordResetVersion) {
+        throw new UnauthorizedException('Token de reset invalido');
+      }
+
+      user.passwordHash = await bcrypt.hash(newPassword, 10);
+      user.passwordResetVersion += 1;
+      await this.userRepository.save(user);
+      await this.revokeActiveSessions(user.id);
+
+      return { message: 'Contrasena actualizada correctamente' };
+    } catch {
+      throw new BadRequestException('Token invalido o expirado');
+    }
+  }
+
+  private async revokeActiveSessions(userId: string) {
+    await this.authSessionRepository.update(
+      {
+        userId,
+        revokedAt: IsNull(),
+      },
+      {
+        revokedAt: new Date(),
+      },
+    );
+  }
+
   async remove(id: string) {
     const user = await this.userRepository.findOne({
       where: { id },
@@ -81,14 +197,12 @@ export class UsersService {
       [id],
     );
 
-    // 2. Eliminar TODAS las metas del usuario
     await this.goalRepository
       .createQueryBuilder()
       .delete()
       .where('created_by = :id', { id })
       .execute();
 
-    // 3. Desconectar pareja
     if (user.partner) {
       const partner = await this.userRepository.findOne({
         where: { id: user.partner.id },
@@ -103,46 +217,38 @@ export class UsersService {
       }
     }
 
-    // 4. Quitar partner_id del usuario antes de eliminar
     user.partner = null;
     await this.userRepository.save(user);
 
-    // 5. Eliminar el usuario
     await this.userRepository.remove(user);
     return { message: 'Usuario eliminado correctamente' };
   }
 
   async connectPartner(userId: string, pairingCode: string) {
-    // 1. Buscar el usuario actual
     const user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ['partner'],
     });
     if (!user) throw new NotFoundException('Usuario no encontrado');
 
-    // 2. Verificar que no tenga ya pareja
     if (user.partner) {
       throw new ConflictException('Ya tienes una pareja conectada');
     }
 
-    // 3. Buscar el partner por pairingCode
     const partner = await this.userRepository.findOne({
       where: { pairingCode },
       relations: ['partner'],
     });
-    if (!partner) throw new NotFoundException('Código de pareja inválido');
+    if (!partner) throw new NotFoundException('Codigo de pareja invalido');
 
-    // 4. Verificar que no sea el mismo usuario
     if (partner.id === userId) {
       throw new ConflictException('No puedes conectarte contigo mismo');
     }
 
-    // 5. Verificar que el partner no tenga ya pareja
     if (partner.partner) {
       throw new ConflictException('Este usuario ya tiene una pareja');
     }
 
-    // 6. Conectar los dos usuarios
     user.partner = partner;
     partner.partner = user;
 
@@ -152,7 +258,6 @@ export class UsersService {
     return { message: 'Pareja conectada exitosamente' };
   }
 
-  // Método para desconectar pareja y generar nuevos códigos
   async disconnectPartner(userId: string) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
@@ -165,7 +270,6 @@ export class UsersService {
 
     const partner = user.partner;
 
-    // Desconectar los dos y generar nuevos códigos
     user.partner = null;
     user.pairingCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 

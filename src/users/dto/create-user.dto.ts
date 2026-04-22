@@ -3,13 +3,13 @@ import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
 export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
-  username: string;
+  username!: string;
 
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @IsString()
   @MinLength(8) // contraseña mínimo 8 caracteres
-  password: string;
+  password!: string;
 }

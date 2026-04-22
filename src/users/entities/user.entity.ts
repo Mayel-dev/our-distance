@@ -25,6 +25,9 @@ export class User {
   @Column({ type: 'varchar', length: 255 })
   passwordHash!: string;
 
+  @Column({ type: 'int', default: 0 })
+  passwordResetVersion!: number;
+
   @OneToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'partner_id' })
   partner!: User | null;
